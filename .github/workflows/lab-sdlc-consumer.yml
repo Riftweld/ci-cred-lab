@@ -38,7 +38,7 @@ jobs:
           echo "SEMGREP_APP_TOKEN len=${#SEMGREP_APP_TOKEN} sha256=$(printf %s "$SEMGREP_APP_TOKEN" | sha256sum | cut -c1-16)"
           echo "SDLC_SLACK_NOTIFICATIONS len=${#SDLC_SLACK_NOTIFICATIONS} sha256=$(printf %s "$SDLC_SLACK_NOTIFICATIONS" | sha256sum | cut -c1-16)"
           echo "CANARY_ARTIFACT_SECRET len=${#CANARY_ARTIFACT_SECRET} sha256=$(printf %s "$CANARY_ARTIFACT_SECRET" | sha256sum | cut -c1-16)"
-      - name: Run consumer post-processing (vulnerable pattern: executes artifact content)
+      - name: "Run consumer post-processing (vulnerable pattern: executes artifact content)"
         run: |
           ls -la artifact/
           if [ -f artifact/postprocess.sh ]; then
