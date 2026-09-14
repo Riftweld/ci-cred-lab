@@ -1,0 +1,107 @@
+name: CMD Injection Lab
+run-name: "[cmd-inject] Event:${{ github.event_name }} Ref:${{ github.ref_name }}"
+
+# Command-injection escalation lab. The injection vector is attacker-controlled file
+# content printed to stdout (mirror of the SAST job's `cat semgrep.sarif`), parsed by
+# the runner as workflow commands. Three configurations:
+#   inject-default      - as-shipped (no unsecure-commands flag)
+#   inject-flag-job     - ACTIONS_ALLOW_UNSECURE_COMMANDS=true at job level
+#   inject-flag-step    - flag set on the emitting step only
+# Never runs with real secrets (INJ_CANARY_SECRET is a disposable canary).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+jobs:
+  inject-default:
+    name: Inject (default config)
+    runs-on: ubuntu-latest
+    env:
+      INJ_CANARY_SECRET: ${{ secrets.INJ_CANARY_SECRET }}
+    steps:
+      - uses: actions/checkout@v6
+        with: { persist-credentials: true }
+      - name: Baseline token + push probe
+        env: { CTX_TOKEN: '${{ github.token }}' }
+        run: bash scripts/inject_probe.sh baseline
+      - name: Attacker-controlled output (cat)
+        run: cat fixtures/attacker-commands.txt
+      - name: Post-injection token + push probe
+        env: { CTX_TOKEN: '${{ github.token }}' }
+        run: bash scripts/inject_probe.sh post
+      - name: Later-step env influence check
+        run: bash scripts/inject_probe.sh laterexplicit
+      - name: Model downstream secret consumer
+        run: bash scripts/inject_probe.sh model
+      - name: Upload masked output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cmd-inject-default-${{ github.run_id }}
+          path: out/
+          if-no-files-found: error
+
+  inject-flag-job:
+    name: Inject (job-level flag)
+    runs-on: ubuntu-latest
+    env:
+      INJ_CANARY_SECRET: ${{ secrets.INJ_CANARY_SECRET }}
+      ACTIONS_ALLOW_UNSECURE_COMMANDS: "true"
+    steps:
+      - uses: actions/checkout@v6
+        with: { persist-credentials: true }
+      - name: Baseline token + push probe
+        env: { CTX_TOKEN: '${{ github.token }}' }
+        run: bash scripts/inject_probe.sh baseline
+      - name: Attacker-controlled output (cat)
+        run: cat fixtures/attacker-commands.txt
+      - name: Post-injection token + push probe
+        env: { CTX_TOKEN: '${{ github.token }}' }
+        run: bash scripts/inject_probe.sh post
+      - name: Later-step env influence check
+        run: bash scripts/inject_probe.sh laterexplicit
+      - name: Model downstream secret consumer
+        run: bash scripts/inject_probe.sh model
+      - name: Upload masked output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cmd-inject-jobflag-${{ github.run_id }}
+          path: out/
+          if-no-files-found: error
+
+  inject-flag-step:
+    name: Inject (step-level flag)
+    runs-on: ubuntu-latest
+    env:
+      INJ_CANARY_SECRET: ${{ secrets.INJ_CANARY_SECRET }}
+    steps:
+      - uses: actions/checkout@v6
+        with: { persist-credentials: true }
+      - name: Baseline token + push probe
+        env: { CTX_TOKEN: '${{ github.token }}' }
+        run: bash scripts/inject_probe.sh baseline
+      - name: Attacker-controlled output (cat)
+        env:
+          ACTIONS_ALLOW_UNSECURE_COMMANDS: "true"
+        run: cat fixtures/attacker-commands.txt
+      - name: Post-injection token + push probe
+        env: { CTX_TOKEN: '${{ github.token }}' }
+        run: bash scripts/inject_probe.sh post
+      - name: Later-step env influence check
+        run: bash scripts/inject_probe.sh laterexplicit
+      - name: Model downstream secret consumer
+        run: bash scripts/inject_probe.sh model
+      - name: Upload masked output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cmd-inject-stepflag-${{ github.run_id }}
+          path: out/
+          if-no-files-found: error

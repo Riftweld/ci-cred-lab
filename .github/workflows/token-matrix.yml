@@ -1,0 +1,38 @@
+name: Token Matrix Lab
+run-name: "[token-matrix] Event:${{ github.event_name }} Ref:${{ github.ref_name }}"
+
+# Lab mirror of the SecureSDLC SAST job's token wiring (permissions block identical:
+# contents:read, security-events:write, actions:read). Measures what the job's
+# GITHUB_TOKEN can do: reads across lab/owner targets, writes only against our lab
+# repos. Token value is never printed (len + sha256 prefix only).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+  pull_request: {}
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+jobs:
+  matrix:
+    name: Token Capability Matrix
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: true
+
+      - name: Run capability matrix (masked)
+        env:
+          CTX_TOKEN: ${{ github.token }}
+        run: bash scripts/token_matrix.sh
+
+      - name: Upload masked matrix
+        uses: actions/upload-artifact@v4
+        with:
+          name: token-matrix-${{ github.event_name }}-${{ github.run_id }}
+          path: out/
+          if-no-files-found: error

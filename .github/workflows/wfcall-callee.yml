@@ -1,0 +1,45 @@
+name: WF Call Callee Probe
+
+# Called workflow: declares the same permission set as the SecureSDLC SAST job.
+# Measures what the called workflow's token can do under different caller grants.
+on:
+  workflow_call:
+    inputs:
+      mode:
+        type: string
+        required: true
+
+jobs:
+  callee-declared:
+    name: "Callee (declares contents:read,security-events:write,actions:read)"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v6
+        with: { persist-credentials: true }
+      - name: Permission probe
+        env: { CTX_TOKEN: '${{ github.token }}' }
+        run: bash scripts/token_perm_probe.sh "declared-${{ inputs.mode }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wfcall-declared-${{ inputs.mode }}-${{ github.run_id }}
+          path: out/
+          if-no-files-found: error
+
+  callee-noperms:
+    name: Callee (no permissions block)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with: { persist-credentials: true }
+      - name: Permission probe
+        env: { CTX_TOKEN: '${{ github.token }}' }
+        run: bash scripts/token_perm_probe.sh "noperms-${{ inputs.mode }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wfcall-noperms-${{ inputs.mode }}-${{ github.run_id }}
+          path: out/
+          if-no-files-found: error
