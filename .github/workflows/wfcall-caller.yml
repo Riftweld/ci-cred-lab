@@ -1,0 +1,30 @@
+name: WF Call Caller Probe
+
+# Measures the called workflow's effective GITHUB_TOKEN under caller grants that are
+# (a) wider, (b) narrower, and (c) absent, relative to the callee's declared set.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  call-wide:
+    name: "Caller (wide: contents+actions+security-events write)"
+    permissions:
+      contents: write
+      actions: write
+      security-events: write
+    uses: ./.github/workflows/wfcall-callee.yml
+    with: { mode: wide }
+
+  call-narrow:
+    name: "Caller (narrow: contents read only)"
+    permissions:
+      contents: read
+    uses: ./.github/workflows/wfcall-callee2.yml
+    with: { mode: narrow }
+
+  call-none:
+    name: Caller (no permissions block)
+    uses: ./.github/workflows/wfcall-callee2.yml
+    with: { mode: none }

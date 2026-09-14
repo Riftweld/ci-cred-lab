@@ -1,0 +1,43 @@
+name: WF Call Callee2 (under-grant)
+
+# Called workflow variants for the under-granted / no-permissions caller cases.
+# narrow-declared declares only contents:read; narrow-noperms declares nothing.
+on:
+  workflow_call:
+    inputs:
+      mode:
+        type: string
+        required: true
+
+jobs:
+  narrow-declared:
+    name: "Callee2 (declares contents:read only)"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with: { persist-credentials: true }
+      - name: Permission probe
+        env: { CTX_TOKEN: '${{ github.token }}' }
+        run: bash scripts/token_perm_probe.sh "narrow-declared-${{ inputs.mode }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wfcall2-declared-${{ inputs.mode }}-${{ github.run_id }}
+          path: out/
+          if-no-files-found: error
+
+  narrow-noperms:
+    name: "Callee2 (no permissions block)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with: { persist-credentials: true }
+      - name: Permission probe
+        env: { CTX_TOKEN: '${{ github.token }}' }
+        run: bash scripts/token_perm_probe.sh "narrow-noperms-${{ inputs.mode }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wfcall2-noperms-${{ inputs.mode }}-${{ github.run_id }}
+          path: out/
+          if-no-files-found: error
