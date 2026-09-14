@@ -108,7 +108,7 @@ row read_runners self "$c" "$(note_from "$f")"
 
 f="$O/bodies/self_runs.json"; c=$(req GET "/repos/$SELF/actions/runs?per_page=3" "$f")
 row read_runs_3 self "$c" ""
-rid=$(jq -r '.workflow_runs[] | select(.status=="completed") | .id' "$f" 2>/dev/null | head -1)
+rid=$(jq -r '.workflow_runs[] | select(.status=="completed" and .conclusion=="success") | .id' "$f" 2>/dev/null | head -1)
 if [ -n "${rid:-}" ]; then
   code=$(curl -sS -m 60 -L -o /dev/null -w '%{http_code} size=%{size_download}' \
     -H "Authorization: Bearer $CTX_TOKEN" \

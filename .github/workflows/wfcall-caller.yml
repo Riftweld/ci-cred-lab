@@ -21,10 +21,10 @@ jobs:
     name: "Caller (narrow: contents read only)"
     permissions:
       contents: read
-    uses: ./.github/workflows/wfcall-callee.yml
+    uses: ./.github/workflows/wfcall-callee2.yml
     with: { mode: narrow }
 
   call-none:
     name: Caller (no permissions block)
-    uses: ./.github/workflows/wfcall-callee.yml
+    uses: ./.github/workflows/wfcall-callee2.yml
     with: { mode: none }
