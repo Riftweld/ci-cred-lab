@@ -49,6 +49,26 @@ jobs:
             echo "INPUT_SLACK_WEBHOOK|absent|len=0|-" >> out/credentials_inventory.txt
           fi
 
+      - name: Masking matrix (canary encodings)
+        run: bash scripts/mask_matrix.sh
+
+      - name: Cache canary (restore)
+        id: cache
+        continue-on-error: true
+        uses: actions/cache@v4
+        with:
+          path: cache-canary
+          key: canary-cache-v1-${{ github.run_id }}
+          restore-keys: |
+            canary-cache-v1-
+
+      - name: Cache canary check (masked)
+        env:
+          CACHE_PRIME: ${{ github.event_name }}
+          CACHE_HIT: ${{ steps.cache.outputs.cache-hit }}
+          CACHE_KEY: ${{ steps.cache.outputs.cache-matched-key }}
+        run: bash scripts/cache_check.sh
+
       - name: Upload masked probe output
         uses: actions/upload-artifact@v4
         with:

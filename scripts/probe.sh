@@ -34,6 +34,11 @@ SCRATCH="$(mktemp -d)"
     echo "scratch_file_sha256_prefix=$(sha256sum "$SCRATCH/tok" | cut -c1-12)"
     rm -f "$SCRATCH/tok"
     if [ -e "$SCRATCH/tok" ]; then echo "scratch_file_delete=FAILED"; else echo "scratch_file_delete=ok"; fi
+    sc="$(curl -sS -m 20 -o "$SCRATCH/semgrep_read.json" -w '%{http_code}' \
+      -H "Authorization: Bearer $v" -H "Accept: application/json" \
+      "https://semgrep.dev/api/v1/deployments" || echo curl-err)"
+    echo "GET semgrep.dev/api/v1/deployments -> $sc (credentialed read attempt; canary token)"
+    echo "semgrep_resp_len=$(wc -c < "$SCRATCH/semgrep_read.json" | tr -d ' ') semgrep_resp_sha12=$(sha256sum "$SCRATCH/semgrep_read.json" | cut -c1-12)"
   else
     echo "scratch_file_write=skipped (no value)"
   fi
@@ -85,6 +90,12 @@ rm -rf "$SCRATCH"
     -H "Authorization: Bearer $TOK" -H "Accept: application/vnd.github+json" \
     "https://api.github.com/user" || echo curl-err)"
   echo "GET /user -> $code (403 expected for installation tokens)"
+
+  code="$(curl -sS -m 20 -o "$O/installation_repos.json" -w '%{http_code}' \
+    -H "Authorization: Bearer $TOK" -H "Accept: application/vnd.github+json" \
+    "https://api.github.com/installation/repositories" || echo curl-err)"
+  echo "GET /installation/repositories -> $code"
+  jq -c '{total_count:(.total_count//null)}' "$O/installation_repos.json" 2>/dev/null || true
 
   pout="$(git push --dry-run origin "HEAD:refs/heads/cred-lab-dryrun" 2>&1)"
   prc=$?

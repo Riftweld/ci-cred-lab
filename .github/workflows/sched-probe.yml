@@ -1,0 +1,67 @@
+name: Schedule Platform Probe
+run-name: "[sched-probe] Event:${{ github.event_name }} Ref:${{ github.ref_name }}"
+
+# PLATFORM SEMANTICS PROBE ONLY (not part of the consumer mirror).
+# The SecureSDLC chain has no schedule trigger; this probe records whether a scheduled
+# run on the default branch receives the repository secrets (expected: yes) so the
+# trigger matrix row is measured rather than assumed.
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+jobs:
+  probe:
+    name: Scheduled Credential Probe
+    runs-on: ubuntu-latest
+    env:
+      SEMGREP_APP_URL: ${{ secrets.SEMGREP_APP_URL }}
+      SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+      SDLC_SLACK_NOTIFICATIONS: ${{ secrets.SDLC_SLACK_NOTIFICATIONS }}
+    steps:
+      - name: Masked credential inventory
+        env:
+          CTX_GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p out
+          {
+            echo "kind|name|present|len|sha256_prefix"
+            for n in SEMGREP_APP_URL SEMGREP_APP_TOKEN SDLC_SLACK_NOTIFICATIONS GITHUB_TOKEN CTX_GITHUB_TOKEN; do
+              if [ -n "${!n+x}" ]; then
+                v="${!n}"
+                echo "env|$n|yes|${#v}|$(printf '%s' "$v" | sha256sum | cut -c1-12)"
+              else
+                echo "env|$n|no|0|-"
+              fi
+            done
+          } > out/credentials_inventory.txt
+          echo "event=${GITHUB_EVENT_NAME} ref=${GITHUB_REF}" >> out/credentials_inventory.txt
+      - name: Token scope (masked)
+        env:
+          CTX_GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          {
+            code="$(curl -sS -m 20 -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $CTX_GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github+json" "https://api.github.com/repos/${GITHUB_REPOSITORY}" || echo curl-err)"
+            echo "GET /repos/${GITHUB_REPOSITORY} -> $code"
+            code="$(curl -sS -m 20 -o /dev/null -w '%{http_code}' -X POST -H "Authorization: Bearer $CTX_GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github+json" "https://api.github.com/repos/${GITHUB_REPOSITORY}/code-scanning/sarifs" -d '{}' || echo curl-err)"
+            echo "POST /code-scanning/sarifs (empty body) -> $code"
+          } > out/token_scope.txt
+      - name: Egress canary (owner listener)
+        run: |
+          CANARY="SDLC-SCHED-CANARY-$(date -u +%s)-${RANDOM}"
+          code="$(curl -sS -m 20 -o out/egress_response.txt -w '%{http_code}' \
+            "http://159-195-55-35.sslip.io:443/sdlc-canary?canary=$CANARY&event=${GITHUB_EVENT_NAME}&run=${GITHUB_RUN_ID}" || echo curl-err)"
+          echo "egress_canary_http=$code canary=$CANARY" > out/egress_meta.txt
+      - name: Upload masked probe output
+        uses: actions/upload-artifact@v4
+        with:
+          name: masked-probe-sched
+          path: out/
+          if-no-files-found: error
