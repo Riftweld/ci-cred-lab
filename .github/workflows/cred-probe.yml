@@ -1,0 +1,55 @@
+name: CI Credential Lab
+run-name: "[ci-cred-lab] Event:${{ github.event_name }} Ref:${{ github.ref_name }}"
+
+# Lab mirror of the credential wiring used by the SecureSDLC SAST job
+# (nautilus-wraith/securesdlc-sast@release-stable, job semgrep-sast):
+#   job env: SEMGREP_APP_URL / SEMGREP_APP_TOKEN from secrets
+#   checkout with persist-credentials: true
+#   restricted GITHUB_TOKEN permissions block (contents:read, security-events:write, actions:read)
+#   healthcheck action input slack_webhook: ${{ secrets.SDLC_SLACK_NOTIFICATIONS }}
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+  pull_request: {}
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+jobs:
+  probe:
+    name: Credential Probe
+    runs-on: ubuntu-latest
+    env:
+      SEMGREP_APP_URL: ${{ secrets.SEMGREP_APP_URL }}
+      SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+      LAST_COMMITTER: ${{ github.actor }}
+      GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: true
+
+      - name: Credential probe (masked)
+        run: bash scripts/probe.sh
+
+      - name: Model healthcheck secret input (masked)
+        env:
+          INPUT_SLACK_WEBHOOK: ${{ secrets.SDLC_SLACK_NOTIFICATIONS }}
+        run: |
+          mkdir -p out
+          v="${INPUT_SLACK_WEBHOOK:-}"
+          if [ -n "$v" ]; then
+            echo "INPUT_SLACK_WEBHOOK|present|len=${#v}|sha256_prefix=$(printf '%s' "$v" | sha256sum | cut -c1-12)" >> out/credentials_inventory.txt
+          else
+            echo "INPUT_SLACK_WEBHOOK|absent|len=0|-" >> out/credentials_inventory.txt
+          fi
+
+      - name: Upload masked probe output
+        uses: actions/upload-artifact@v4
+        with:
+          name: masked-probe-${{ github.event_name }}
+          path: out/
+          if-no-files-found: error
