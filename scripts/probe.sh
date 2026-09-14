@@ -48,10 +48,17 @@ rm -rf "$SCRATCH"
     dec="$(printf '%s' "$b64" | base64 -d 2>/dev/null || true)"
     echo "persisted_extraheader=present value_len=${#extra} b64_len=${#b64} decoded_len=${#dec}"
     echo "decoded_has_x_access_token=$(printf '%s' "$dec" | grep -q 'x-access-token' && echo yes || echo no)"
-    ptok="$(printf '%s' "$dec" | grep -oE 'ghs_[A-Za-z0-9_]+' | head -1 || true)"
-    echo "extracted_token_len=${#ptok} extracted_token_sha256_prefix=$(hp "$ptok")"
-    echo "context_token_len=${#TOK} context_token_sha256_prefix=$(hp "$TOK")"
-    if [ -n "$ptok" ] && [ "$(hp "$ptok")" = "$(hp "$TOK")" ]; then
+    echo "context_token_len=${#TOK} context_token_starts_ghs=$(case "$TOK" in ghs_*) echo yes;; *) echo no;; esac)"
+    expected_b64="$(printf 'x-access-token:%s' "$TOK" | base64 -w0)"
+    if [ -n "$TOK" ] && [ "$(hp "$b64")" = "$(hp "$expected_b64")" ]; then
+      echo "persisted_extraheader_equals_basic_context_token=YES"
+    else
+      echo "persisted_extraheader_equals_basic_context_token=NO"
+    fi
+    ptok_full="$(printf '%s' "${dec#x-access-token:}" | tr -d '\r\n')"
+    echo "extracted_full_len=${#ptok_full} extracted_full_sha256_prefix=$(hp "$ptok_full")"
+    echo "context_full_sha256_prefix=$(hp "$TOK")"
+    if [ -n "$ptok_full" ] && [ "$(hp "$ptok_full")" = "$(hp "$TOK")" ]; then
       echo "persisted_token_equals_context_token=YES"
     else
       echo "persisted_token_equals_context_token=NO"
@@ -97,13 +104,16 @@ rm -rf "$SCRATCH"
   echo "sarif_upload_id_present=$([ -n "$sarif_id" ] && echo yes || echo no)"
   if [ -n "$sarif_id" ]; then
     sleep 6
+    curl -sS -m 20 -H "Authorization: Bearer $TOK" -H "Accept: application/vnd.github+json" \
+      "https://api.github.com/repos/$OWNERREPO/code-scanning/sarifs/$sarif_id" \
+      | jq -c '{processing_status:(.processing_status//null),analyses_url_present:(.analyses_url!=null)}' 2>/dev/null || true
     ids="$(curl -sS -m 20 -H "Authorization: Bearer $TOK" -H "Accept: application/vnd.github+json" \
       "https://api.github.com/repos/$OWNERREPO/code-scanning/analyses?tool_name=ci-cred-lab-canary" \
       | jq -r '.[].id' 2>/dev/null | head -3 || true)"
     for id in $ids; do
-      dc="$(curl -sS -m 20 -o /dev/null -w '%{http_code}' -X DELETE \
+      dc="$(curl -sS -m 20 -o "$O/analysis_delete.json" -w '%{http_code}' -X DELETE \
         -H "Authorization: Bearer $TOK" -H "Accept: application/vnd.github+json" \
-        "https://api.github.com/repos/$OWNERREPO/code-scanning/analyses/$id" || echo curl-err)"
+        "https://api.github.com/repos/$OWNERREPO/code-scanning/analyses/$id?confirm_delete=true" || echo curl-err)"
       echo "DELETE analysis $id -> $dc"
     done
   fi
