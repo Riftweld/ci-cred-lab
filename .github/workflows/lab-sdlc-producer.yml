@@ -1,0 +1,45 @@
+name: Lab SecureSDLC SAST
+run-name: "[Lab SecureSDLC SAST] Event:${{ github.event_name }} Ref:${{ github.ref_name }}"
+
+# LAB-ONLY mirror of the vendor SAST producer for the artifact-poisoning class test.
+# Fork PRs: secrets withheld (platform), repo-shipped semgrep-final.sarif survives as the
+# "scan result" -> attacker-controlled artifact content is uploaded under the production
+# artifact name "Semgrep SAST scan results".
+
+on:
+  pull_request: {}
+  workflow_dispatch: {}
+
+jobs:
+  semgrep-sast:
+    name: SecureSDLC SAST (lab)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    env:
+      SEMGREP_APP_URL: ${{ secrets.SEMGREP_APP_URL }}
+      SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Run Semgrep SAST scan (lab stand-in)
+        run: |
+          echo "fork/PR context: event=${GITHUB_EVENT_NAME} repo=${GITHUB_REPOSITORY}"
+          echo "SEMGREP_APP_TOKEN set: $([ -n "$SEMGREP_APP_TOKEN" ] && echo yes || echo no)"
+          # Mirror of the vendor fall-through: missing token -> no scan output -> the
+          # repo-shipped file is what later steps consume.
+          if [ ! -f semgrep-final.sarif ]; then
+            printf '%s\n' '{"version":"2.1.0","runs":[]}' > semgrep-final.sarif
+          fi
+          echo "files present:"; ls -l semgrep-final.sarif postprocess.sh 2>/dev/null || true
+      - name: Upload Semgrep artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Semgrep SAST scan results
+          path: |
+            semgrep-final.sarif
+            postprocess.sh
+          if-no-files-found: warn
