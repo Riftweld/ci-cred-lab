@@ -33,6 +33,8 @@ jobs:
           persist-credentials: true
 
       - name: Credential probe (masked)
+        env:
+          CTX_GITHUB_TOKEN: ${{ github.token }}
         run: bash scripts/probe.sh
 
       - name: Model healthcheck secret input (masked)

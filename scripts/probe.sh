@@ -7,13 +7,13 @@ set -uo pipefail
 O="out"
 mkdir -p "$O"
 OWNERREPO="${GITHUB_REPOSITORY}"
-TOK="${GITHUB_TOKEN:-}"
+TOK="${CTX_GITHUB_TOKEN:-}"
 hp() { printf '%s' "$1" | sha256sum | cut -c1-12; }
 
-# ---- 1. credential inventory (job env + runner-provided token-like vars) ----
+# ---- 1. credential inventory (default job env + runner-provided token-like vars) ----
 {
   echo "kind|name|present|len|sha256_prefix"
-  for n in SEMGREP_APP_URL SEMGREP_APP_TOKEN SDLC_SLACK_NOTIFICATIONS GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_CACHE_URL ACTIONS_RESULTS_URL; do
+  for n in SEMGREP_APP_URL SEMGREP_APP_TOKEN SDLC_SLACK_NOTIFICATIONS GITHUB_TOKEN CTX_GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_CACHE_URL ACTIONS_RESULTS_URL; do
     if [ -n "${!n+x}" ]; then
       v="${!n}"
       echo "env|$n|yes|${#v}|$(hp "$v")"
@@ -40,30 +40,34 @@ SCRATCH="$(mktemp -d)"
 } > "$O/secret_read_proof.txt"
 rm -rf "$SCRATCH"
 
-# ---- 3. persisted checkout credential (.git/config extraheader) vs env token ----
+# ---- 3. persisted checkout credential (.git/config extraheader) vs context token ----
 {
-  extra="$(git config --get-all 'http.https://github.com/.extraheader' 2>/dev/null | head -1 || true)"
+  extra="$(git config --get 'http.https://github.com/.extraheader' 2>/dev/null || true)"
   if [ -n "$extra" ]; then
     b64="${extra##* }"
     dec="$(printf '%s' "$b64" | base64 -d 2>/dev/null || true)"
-    ptok="${dec#*:}"
-    echo "persisted_extraheader: present=yes b64_len=${#b64} token_len=${#ptok}"
-    echo "persisted_token_sha256_prefix=$(hp "$ptok")"
-    echo "env_github_token_sha256_prefix=$(hp "$TOK")"
+    echo "persisted_extraheader=present value_len=${#extra} b64_len=${#b64} decoded_len=${#dec}"
+    echo "decoded_has_x_access_token=$(printf '%s' "$dec" | grep -q 'x-access-token' && echo yes || echo no)"
+    ptok="$(printf '%s' "$dec" | grep -oE 'ghs_[A-Za-z0-9_]+' | head -1 || true)"
+    echo "extracted_token_len=${#ptok} extracted_token_sha256_prefix=$(hp "$ptok")"
+    echo "context_token_len=${#TOK} context_token_sha256_prefix=$(hp "$TOK")"
     if [ -n "$ptok" ] && [ "$(hp "$ptok")" = "$(hp "$TOK")" ]; then
-      echo "persisted_token_equals_env_token=YES"
+      echo "persisted_token_equals_context_token=YES"
     else
-      echo "persisted_token_equals_env_token=NO"
+      echo "persisted_token_equals_context_token=NO"
     fi
     echo "source_path=${GITHUB_WORKSPACE}/.git/config"
   else
-    echo "persisted_extraheader: present=no"
+    echo "persisted_extraheader=absent"
   fi
+  echo "--- git config section names (no values) ---"
+  git config --local --name-only --list | sort -u | sed 's/[A-Za-z0-9+/=]\{32,\}/<redacted-str>/g' | head -20
 } > "$O/persisted_credential_proof.txt"
 
 # ---- 4. GITHUB_TOKEN scope checks (masked; token only in Authorization header) ----
 {
   echo "event=${GITHUB_EVENT_NAME} ref=${GITHUB_REF} sha=${GITHUB_SHA}"
+  echo "token_source=context-mapped github.token; default step env GITHUB_TOKEN absent (see credentials_inventory)"
   code="$(curl -sS -m 20 -o "$O/repo_view.json" -w '%{http_code}' \
     -H "Authorization: Bearer $TOK" -H "Accept: application/vnd.github+json" \
     "https://api.github.com/repos/$OWNERREPO" || echo curl-err)"
@@ -122,6 +126,10 @@ rm -rf "$SCRATCH"
   for f in "$HOME/.docker/config.json" "$HOME/.npmrc" "$HOME/.git-credentials" "$HOME/.netrc" "$HOME/.config/pip/pip.conf" "$HOME/.aws/credentials" "$HOME/.config/gcloud/application_default_credentials.json" "$HOME/.kube/config" "$HOME/.gitconfig"; do
     if [ -e "$f" ]; then echo "file|$f|present"; else echo "file|$f|absent"; fi
   done
+  if [ -f "$HOME/.docker/config.json" ]; then
+    echo "docker_config_registry_keys=$(jq -r '.auths // {} | keys | join(",")' "$HOME/.docker/config.json" 2>/dev/null || echo parse-fail)"
+    echo "docker_config_auth_secret_entries=$(jq -r '[.auths // {} | .[] | select(.auth? != null)] | length' "$HOME/.docker/config.json" 2>/dev/null || echo 0)"
+  fi
   echo "--- cloud credential env presence ---"
   for n in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN GOOGLE_APPLICATION_CREDENTIALS AZURE_CLIENT_ID AZURE_CLIENT_SECRET ARM_CLIENT_ID ARM_CLIENT_SECRET; do
     if [ -n "${!n+x}" ]; then echo "cloudenv|$n|present"; else echo "cloudenv|$n|absent"; fi
@@ -130,6 +138,7 @@ rm -rf "$SCRATCH"
 
 # ---- 6. env variable names (names only) + run context ----
 env | cut -d= -f1 | sort -u > "$O/env_names.txt"
+env | cut -d= -f1 | grep -Ei 'token|secret|key|pass|cred' | sort -u > "$O/sensitive_env_names.txt"
 {
   echo "runner_os=${RUNNER_OS:-} runner_arch=${RUNNER_ARCH:-} whoami=$(whoami) uid=$(id -u)"
   echo "github_event_name=$GITHUB_EVENT_NAME github_actor=$GITHUB_ACTOR"
