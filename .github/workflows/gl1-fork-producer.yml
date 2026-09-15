@@ -1,0 +1,61 @@
+name: GL1 Fork Producer
+run-name: "[gl1-fork-producer] Event:${{ github.event_name }} Ref:${{ github.ref_name }}"
+
+# GL1-FORK lab (own-repo, benign markers only). Fork-PR writer cell: a PR from
+# the owner-controlled org fork Riftweld/ci-cred-lab saves a docs-shape
+# (Linux-pnpm-store-v2-*) marker cache; the base repo's main run probes it.
+# Also captures the effective ACTIONS_CACHE_MODE (platform policy signal).
+# No secrets, no target traffic.
+on:
+  pull_request: {}
+
+permissions:
+  contents: read
+
+jobs:
+  save:
+    name: Fork-PR writer — marker + cache save
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fork context + effective cache mode
+        run: |
+          echo "=== GL1-FORK PRODUCER CONTEXT ==="
+          echo "writer_event=${GITHUB_EVENT_NAME}"
+          echo "writer_ref=${GITHUB_REF}"
+          echo "writer_ref_name=${GITHUB_REF_NAME}"
+          echo "writer_run_id=${GITHUB_RUN_ID}"
+          echo "writer_run_attempt=${GITHUB_RUN_ATTEMPT}"
+          echo "writer_sha=${GITHUB_SHA}"
+          echo "pr_head_repo=${{ github.event.pull_request.head.repo.full_name }}"
+          echo "pr_head_ref=${{ github.event.pull_request.head.ref }}"
+          echo "pr_base_repo=${{ github.repository }}"
+          echo "pr_number=${{ github.event.pull_request.number }}"
+          echo "utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "ACTIONS_CACHE_MODE=${ACTIONS_CACHE_MODE}"
+          env | grep -E '^ACTIONS_' | sed 's/=.*$/=<redacted>/' | sort
+
+      - name: Build benign marker
+        run: |
+          mkdir -p node_modules
+          {
+            echo "GL1FORK01-MARKER v1"
+            echo "writer_event=${GITHUB_EVENT_NAME}"
+            echo "writer_ref=${GITHUB_REF}"
+            echo "writer_ref_name=${GITHUB_REF_NAME}"
+            echo "writer_run_id=${GITHUB_RUN_ID}"
+            echo "writer_run_attempt=${GITHUB_RUN_ATTEMPT}"
+            echo "writer_sha=${GITHUB_SHA}"
+            echo "pr_head_repo=${{ github.event.pull_request.head.repo.full_name }}"
+            echo "utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > node_modules/gl1fork-marker.txt
+          cat node_modules/gl1fork-marker.txt
+          sha256sum node_modules/gl1fork-marker.txt
+
+      - name: Save marker cache (docs-shape key + prefix)
+        id: save
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            **/node_modules
+          key: Linux-pnpm-store-v2-gl1fork01-${{ github.ref_name }}-${{ github.run_id }}
