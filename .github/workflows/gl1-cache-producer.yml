@@ -1,0 +1,43 @@
+name: GL1 Cache Producer
+run-name: "[gl1-cache-producer] Event:${{ github.event_name }} Ref:${{ github.ref_name }}"
+
+# GL1 lab (own-repo, benign markers only). Mirrors the inkonchain/docs cache
+# shape: prefix-style key (Linux-pnpm-store-v2-*) and path **/node_modules.
+# No secrets, no target traffic. Purpose: measure GitHub Actions cache scope
+# (can a PR/branch-ref run's cache be restored by a default-branch run?).
+on:
+  pull_request: {}
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  save:
+    name: Write marker and save cache
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Build benign marker
+        run: |
+          mkdir -p node_modules
+          {
+            echo "GL1CACHE01-MARKER v1"
+            echo "writer_event=${GITHUB_EVENT_NAME}"
+            echo "writer_ref=${GITHUB_REF}"
+            echo "writer_ref_name=${GITHUB_REF_NAME}"
+            echo "writer_run_id=${GITHUB_RUN_ID}"
+            echo "writer_run_attempt=${GITHUB_RUN_ATTEMPT}"
+            echo "writer_sha=${GITHUB_SHA}"
+            echo "utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > node_modules/gl1-marker.txt
+          cat node_modules/gl1-marker.txt
+          sha256sum node_modules/gl1-marker.txt
+
+      - name: Save marker cache (docs-shape key + prefix)
+        id: save
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            **/node_modules
+          key: Linux-pnpm-store-v2-gl1cache01-${{ github.ref_name }}-${{ github.run_id }}
