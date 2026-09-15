@@ -1,0 +1,82 @@
+name: GL1 Fork Consumer
+run-name: "[gl1-fork-consumer] Event:${{ github.event_name }} Ref:${{ github.ref_name }} control:${{ inputs.save_control }}"
+
+# GL1-FORK lab (own-repo, benign markers only). Fork-PR cache-scope cell:
+# probes the docs-shape prefix Linux-pnpm-store-v2-gl1fork01- from the default
+# branch (`main`). With inputs.save_control=true it also saves a main-scope
+# control cache so a later probe can prove the reader mechanics live.
+# No secrets, no target traffic.
+on:
+  workflow_dispatch:
+    inputs:
+      save_control:
+        description: "also save a main-scope control cache after the probe"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  restore:
+    name: Fork-prefix restore probe and inspect
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Header
+        run: |
+          echo "=== GL1-FORK CONSUMER HEADER ==="
+          echo "consumer_event=${GITHUB_EVENT_NAME}"
+          echo "consumer_ref=${GITHUB_REF}"
+          echo "consumer_ref_name=${GITHUB_REF_NAME}"
+          echo "consumer_run_id=${GITHUB_RUN_ID}"
+          echo "consumer_sha=${GITHUB_SHA}"
+          echo "save_control=${{ inputs.save_control }}"
+          echo "utc_start=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+      - name: Prefix restore probe (exact key intentionally different)
+        id: probe
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            **/node_modules
+          key: Linux-pnpm-store-v2-gl1fork01-main-probe-${{ github.run_id }}
+          restore-keys: |
+            Linux-pnpm-store-v2-gl1fork01-
+
+      - name: Inspect restore result (decisive)
+        run: |
+          echo "=== GL1-FORK PROBE RESULT ==="
+          echo "probe_hit=${{ steps.probe.outputs.cache-hit }}"
+          echo "probe_matched_key=${{ steps.probe.outputs.cache-matched-key }}"
+          if [ -f node_modules/gl1fork-marker.txt ]; then
+            echo "probe_marker_present=yes"
+            cat node_modules/gl1fork-marker.txt
+            echo "probe_marker_sha256=$(sha256sum node_modules/gl1fork-marker.txt | cut -d' ' -f1)"
+          else
+            echo "probe_marker_present=no"
+          fi
+          ls -la node_modules 2>/dev/null || echo "node_modules_absent"
+
+      - name: Build control marker (main scope)
+        if: ${{ inputs.save_control }}
+        run: |
+          mkdir -p node_modules
+          {
+            echo "GL1FORK01-CTL v1"
+            echo "ctl_event=${GITHUB_EVENT_NAME}"
+            echo "ctl_ref=${GITHUB_REF}"
+            echo "ctl_run_id=${GITHUB_RUN_ID}"
+            echo "utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > node_modules/gl1fork-ctl-marker.txt
+          cat node_modules/gl1fork-ctl-marker.txt
+          sha256sum node_modules/gl1fork-ctl-marker.txt
+
+      - name: Save control cache (main scope, proves writer works)
+        if: ${{ inputs.save_control }}
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            **/node_modules
+          key: Linux-pnpm-store-v2-gl1fork01-main-ctl-${{ github.run_id }}
